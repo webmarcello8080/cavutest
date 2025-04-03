@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CheckAvailabilityRequest;
 use App\Http\Requests\StoreBookingRequest;
 use App\Models\Booking;
 use App\Services\BookingPriceService;
@@ -10,6 +11,14 @@ use Illuminate\Http\JsonResponse;
 
 class BookingController extends Controller
 {
+
+    protected BookingPriceService $bookingService;
+
+    public function __construct(BookingPriceService $bookingService)
+    {
+        $this->bookingService = $bookingService;
+    }
+
     /**
      * create a new booking
      * 
@@ -18,8 +27,14 @@ class BookingController extends Controller
      */
     public function create(StoreBookingRequest $request): JsonResponse
     {
-        $bookingService = new BookingPriceService;
-        $price = $bookingService->calculatePrice($request->from, $request->to);
+        // Check parking space availability
+        if (!$this->bookingService->isDateRangeAvailable($request->from, $request->to)) {
+            return response()->json([
+                'message' => "No parking spaces available for the selected date range.",
+            ], 422);
+        }
+
+        $price = $this->bookingService->calculatePrice($request->from, $request->to);
 
         $booking = Booking::create([
             'customer' => $request->customer,
@@ -35,6 +50,22 @@ class BookingController extends Controller
     }
 
     /**
+     * Check available parking spaces for a given date range.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function checkAvailability(CheckAvailabilityRequest $request): JsonResponse
+    {
+        $availability = $this->bookingService->getAvailableSpaces($request->from, $request->to);
+    
+        return response()->json([
+            'message' => 'Availability retrieved successfully',
+            'availability' => $availability,
+        ], 200);
+    }
+
+    /**
      * Update an existing booking.
      *
      * @param  \App\Http\Requests\StoreBookingRequest  $request
@@ -45,6 +76,13 @@ class BookingController extends Controller
     {
         try {
             $booking = Booking::findOrFail($id);
+
+            // Check parking space availability
+            if (!$this->bookingService->isDateRangeAvailable($request->from, $request->to)) {
+                return response()->json([
+                    'message' => "No parking spaces available for the selected date range.",
+                ], 422);
+            }
 
             // Update the booking with new data
             $booking->update([

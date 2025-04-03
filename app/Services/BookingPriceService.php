@@ -1,10 +1,15 @@
 <?php
 namespace App\Services;
 
+use App\Models\Booking;
 use App\Models\Price;
+use Carbon\Carbon;
 
 class BookingPriceService
 {
+    // I don't like this hardcoded number, this should be stored in the ENV file or in the DB as a options
+    private int $totalSpaces = 10;
+
     /**
      * Calculate the price for a booking based on the given from and to dates.
      *
@@ -42,5 +47,48 @@ class BookingPriceService
                       ->first();
 
         return $price ? $price->price : 0.0;
+    }
+
+    /**
+     * Check available parking spaces for each day in the given date range.
+     *
+     * @param string $from
+     * @param string $to
+     * @return array
+     */
+    public function getAvailableSpaces(string $from, string $to): array
+    {
+        $fromDate = Carbon::parse($from);
+        $toDate = Carbon::parse($to);
+        $availability = [];
+
+        while ($fromDate <= $toDate) {
+            $bookedSpaces = Booking::whereDate('from', '<=', $fromDate)
+                ->whereDate('to', '>=', $fromDate)
+                ->count();
+
+            $availability[$fromDate->toDateString()] = max(0, $this->totalSpaces - $bookedSpaces);
+            $fromDate->addDay();
+        }
+
+        return $availability;
+    }
+
+    /**
+     * Check if all days in the given range have available parking spaces.
+     *
+     * @param string $from
+     * @param string $to
+     * @return bool Returns true if all days have availability, false otherwise.
+     */
+    public function isDateRangeAvailable(string $from, string $to): ?string
+    {
+        $availability = $this->getAvailableSpaces($from, $to);
+        foreach ($availability as $date => $spaces) {
+            if ($spaces <= 0) {
+                return false;
+            }
+        }
+        return true;
     }
 }
